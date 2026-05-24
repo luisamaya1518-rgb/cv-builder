@@ -37,6 +37,24 @@ class RateLimitError extends Error {
   }
 }
 
+// ─── Limpieza de respuesta: elimina bloques markdown y texto extra ───────────
+
+function extractHTML(raw: string): string {
+  // 1. Quita bloques ```html ... ``` o ``` ... ```
+  let cleaned = raw
+    .replace(/^```(?:html)?\s*/i, "")
+    .replace(/\s*```\s*$/i, "")
+    .trim();
+
+  // 2. Si aún así no empieza con <!DOCTYPE o <html, busca el primer < y recorta desde ahí
+  const firstTag = cleaned.indexOf("<!DOCTYPE");
+  const firstHtml = cleaned.toLowerCase().indexOf("<html");
+  const start = firstTag !== -1 ? firstTag : firstHtml !== -1 ? firstHtml : 0;
+  cleaned = cleaned.slice(start).trim();
+
+  return cleaned;
+}
+
 // ─── Función core con fallback automático ───────────────────────────────────
 
 async function callWithFallback(
@@ -71,10 +89,12 @@ async function callWithFallback(
         }
 
         const result = response.choices[0].message.content || "";
+        const cleaned = extractHTML(result);
+
         console.log(`✅ Éxito con [${keyConfig.name}] + [${model}]`);
-        console.log(`📄 Primeros 200 chars:`, result.substring(0, 200));
-        console.log(`📏 Longitud total: ${result.length} chars`);
-        return result;
+        console.log(`📄 Primeros 200 chars:`, cleaned.substring(0, 200));
+        console.log(`📏 Longitud total: ${cleaned.length} chars`);
+        return cleaned;
 
       } catch (error) {
         const msg = `[${keyConfig.name}][${model}]: ${(error as Error).message}`;
@@ -95,7 +115,7 @@ const styleGuides: Record<string, string> = {
     ESTILO: Moderno
     - Colores: azul (#2563EB) como color principal, fondo blanco, texto oscuro (#1E293B)
     - Tipografía: sans-serif moderna (Arial o Inter)
-    - Layout: sidebar izquierdo con foto y datos de contacto, contenido principal a la derecha
+    - Layout: sidebar izquierdo con datos de contacto, contenido principal a la derecha
     - Encabezado con banda de color azul con nombre y título en blanco
     - Secciones con línea divisora azul y títulos en mayúsculas
     - Íconos simples con bullets de color azul
@@ -134,23 +154,25 @@ const styleGuides: Record<string, string> = {
 export async function generateCV(formData: any, style: string = "moderno"): Promise<string> {
   const styleGuide = styleGuides[style] || styleGuides.moderno;
 
-  const prompt = `Eres un experto diseñador de CVs. Genera un CV profesional y visualmente atractivo en HTML + CSS completo.
+  const prompt = `Eres un experto diseñador de CVs. Tu única tarea es generar HTML puro de un CV profesional.
 
-DATOS DEL USUARIO:
+REGLA ABSOLUTA: Responde ÚNICAMENTE con el código HTML. No escribas ninguna palabra antes ni después del HTML. No uses bloques de código markdown (no uses \`\`\`html ni \`\`\`). Tu respuesta debe comenzar con <!DOCTYPE html> y terminar con </html>.
+
+DATOS DEL CANDIDATO:
 ${JSON.stringify(formData, null, 2)}
 
-GUÍA DE ESTILO A SEGUIR OBLIGATORIAMENTE:
+GUÍA DE ESTILO OBLIGATORIA:
 ${styleGuide}
 
-INSTRUCCIONES TÉCNICAS:
-- Devuelve SOLO el código HTML completo, sin explicaciones ni bloques markdown
-- Todo el CSS debe estar dentro de una etiqueta <style> en el <head>
-- El diseño debe verse exactamente como el estilo indicado
-- Usa unidades em y rem para tipografía, px para espaciados
-- El CV debe tener formato A4 (794px de ancho máximo)
-- Incluye todas las secciones: encabezado, resumen, experiencia, educación, habilidades, herramientas, idiomas
-- El resultado debe verse como un CV real listo para imprimir o exportar a PDF
-- NO uses imágenes externas ni fuentes de Google Fonts, solo fuentes del sistema`;
+REQUISITOS TÉCNICOS:
+- El documento debe comenzar exactamente con: <!DOCTYPE html>
+- Todo el CSS inline dentro de una etiqueta <style> en el <head>
+- Ancho máximo del CV: 794px (formato A4)
+- NO uses imágenes externas ni Google Fonts, solo fuentes del sistema
+- NO inventes datos que no estén en el JSON — usa exactamente lo que se proporciona
+- Muestra TODOS los campos del JSON: nombre, email, teléfono, ubicación, título, resumen, experiencia (con fechas reales), educación (con fechas reales), habilidades, herramientas, idiomas
+- Para las fechas de experiencia y educación, usa exactamente los valores del JSON sin modificarlos
+- El resultado debe verse como un CV real listo para imprimir`;
 
   return callWithFallback([{ role: "user" as const, content: prompt }]);
 }
@@ -158,15 +180,16 @@ INSTRUCCIONES TÉCNICAS:
 export async function editCV(currentHTML: string, userPrompt: string): Promise<string> {
   const prompt = `Eres un experto diseñador de CVs. El usuario quiere modificar su CV en HTML.
 
+REGLA ABSOLUTA: Responde ÚNICAMENTE con el código HTML modificado. No escribas ninguna palabra antes ni después. No uses bloques markdown (no uses \`\`\`html ni \`\`\`). Tu respuesta debe comenzar con <!DOCTYPE html> y terminar con </html>.
+
 CV ACTUAL:
 ${currentHTML}
 
 INSTRUCCIÓN DEL USUARIO:
 ${userPrompt}
 
-INSTRUCCIONES:
-- Devuelve SOLO el HTML modificado completo, sin explicaciones ni bloques markdown
-- Aplica exactamente lo que pide el usuario (colores, tipografía, layout, secciones, etc)
+REQUISITOS:
+- Aplica exactamente lo que pide el usuario
 - Mantén todos los datos del CV intactos, solo cambia lo que se indica
 - El resultado debe ser HTML válido y completo`;
 
