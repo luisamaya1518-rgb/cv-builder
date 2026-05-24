@@ -1,6 +1,6 @@
 import type { CVFormData, CVStyle } from "../types/cv.types";
 
-const API_URL = "http://localhost:3001";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
 
 export async function generateCV(formData: CVFormData, style: CVStyle): Promise<string> {
   const response = await fetch(`${API_URL}/api/cv/generate`, {
